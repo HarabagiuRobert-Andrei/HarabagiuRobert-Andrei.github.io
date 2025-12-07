@@ -8,7 +8,7 @@ import Layout from '@/layouts/Layout.astro'
 <Layout class="max-w-3xl">
   <PageHead slot="head" title="Achievements" />
   <Breadcrumbs items={[{ label: 'Achievements', icon: 'lucide:trophy' }]} />
-  
+
   <section>
     <div class="min-w-full">
       <div class="prose mb-8">
@@ -21,7 +21,13 @@ import Layout from '@/layouts/Layout.astro'
       <div class="mb-12">
         <h2 class="mb-6 text-2xl font-medium">CTF Competitions</h2>
         <div class="flex flex-col gap-6">
-          
+
+	  <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">Null CTF</h3>
+            <p class="text-sm text-muted-foreground mb-3">December 2025</p>
+            <p class="text-lg font-medium text-yellow-600 dark:text-yellow-400">🎯 10th Place</p>
+          </div>
+
           <div class="rounded-lg border bg-card p-6">
             <h3 class="text-xl font-semibold mb-2">Chronos Security CTF</h3>
             <p class="text-sm text-muted-foreground mb-3">November 2025</p>
@@ -70,7 +76,7 @@ import Layout from '@/layouts/Layout.astro'
       <div>
         <h2 class="mb-6 text-2xl font-medium">Certifications</h2>
         <div class="flex flex-col gap-6">
-          
+
           <div class="rounded-lg border bg-card p-6">
             <h3 class="text-xl font-semibold mb-2">eJPT (eLearnSecurity Junior Penetration Tester)</h3>
             <p class="text-sm text-muted-foreground mb-2">Credential ID: 158855536</p>
