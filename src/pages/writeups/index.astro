@@ -1,0 +1,41 @@
+---
+import BlogCard from '@/components/BlogCard.astro'
+import Breadcrumbs from '@/components/Breadcrumbs.astro'
+import PageHead from '@/components/PageHead.astro'
+import Layout from '@/layouts/Layout.astro'
+import { getAllPosts, groupPostsByYear } from '@/lib/data-utils'
+
+const posts = await getAllPosts()
+const postsByYear = groupPostsByYear(posts)
+const sortedYears = Object.keys(postsByYear).sort((a, b) => b.localeCompare(a))
+---
+
+<Layout class="max-w-3xl">
+  <PageHead slot="head" title="Writeups" />
+  <Breadcrumbs items={[{ label: 'Writeups', icon: 'lucide:file-pen' }]} />
+
+  <section class="flex flex-col gap-y-6">
+    <div class="prose">
+      <p class="mt-0">A collection of my CTF notes and walkthroughs.</p>
+    </div>
+
+    {
+      posts.length > 0 ? (
+        sortedYears.map((year) => (
+          <div class="space-y-3">
+            <h2 class="text-xl font-semibold">{year}</h2>
+            <ul class="flex flex-col gap-4">
+              {postsByYear[year].map((post) => (
+                <li>
+                  <BlogCard entry={post} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      ) : (
+        <p class="text-muted-foreground">No writeups published yet.</p>
+      )
+    }
+  </section>
+</Layout>

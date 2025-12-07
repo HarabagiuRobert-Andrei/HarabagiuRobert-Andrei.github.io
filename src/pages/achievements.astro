@@ -1,0 +1,102 @@
+---
+import Breadcrumbs from '@/components/Breadcrumbs.astro'
+import Link from '@/components/Link.astro'
+import PageHead from '@/components/PageHead.astro'
+import Layout from '@/layouts/Layout.astro'
+---
+
+<Layout class="max-w-3xl">
+  <PageHead slot="head" title="Achievements" />
+  <Breadcrumbs items={[{ label: 'Achievements', icon: 'lucide:trophy' }]} />
+  
+  <section>
+    <div class="min-w-full">
+      <div class="prose mb-8">
+        <h1>Achievements & Certifications</h1>
+        <p>
+          A collection of my competition wins and professional certifications in cybersecurity.
+        </p>
+      </div>
+
+      <div class="mb-12">
+        <h2 class="mb-6 text-2xl font-medium">CTF Competitions</h2>
+        <div class="flex flex-col gap-6">
+          
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">Chronos Security CTF</h3>
+            <p class="text-sm text-muted-foreground mb-3">November 2025</p>
+            <p class="text-lg font-medium text-yellow-600 dark:text-yellow-400">🥈 2nd Place - Juniors Category</p>
+          </div>
+
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">RetroDojo - DefCamp 2025</h3>
+            <p class="text-sm text-muted-foreground mb-3">November 2025</p>
+            <p class="text-lg font-medium text-yellow-500 dark:text-yellow-300">🥇 1st Place</p>
+          </div>
+
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">OmniCTF</h3>
+            <p class="text-sm text-muted-foreground mb-3">October 2025</p>
+            <p class="text-lg font-medium text-orange-600 dark:text-orange-400">🥉 3rd Place</p>
+          </div>
+
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">YouniHack</h3>
+            <p class="text-sm text-muted-foreground mb-3">September 2025</p>
+            <p class="text-lg font-medium text-yellow-500 dark:text-yellow-300">🥇 1st Place</p>
+          </div>
+
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">Cybersecurity Olympiad - Regional Stage</h3>
+            <p class="text-sm text-muted-foreground mb-3">January 2025</p>
+            <p class="text-lg font-medium text-yellow-500 dark:text-yellow-300">🥇 1st Place</p>
+          </div>
+
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">UNbreakable Romania Individual</h3>
+            <p class="text-sm text-muted-foreground mb-3">January 2025</p>
+            <p class="text-lg font-medium text-gray-600 dark:text-gray-400">🥈 60th Place (Silver Award)</p>
+          </div>
+
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">Cybersecurity Olympiad - Regional Stage</h3>
+            <p class="text-sm text-muted-foreground mb-3">January 2024</p>
+            <p class="text-lg font-medium text-yellow-600 dark:text-yellow-400">🥈 2nd Place</p>
+          </div>
+
+        </div>
+      </div>
+
+      <div>
+        <h2 class="mb-6 text-2xl font-medium">Certifications</h2>
+        <div class="flex flex-col gap-6">
+          
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">eJPT (eLearnSecurity Junior Penetration Tester)</h3>
+            <p class="text-sm text-muted-foreground mb-2">Credential ID: 158855536</p>
+            <Link href="https://certs.ine.com/507565d0-2334-4471-9a7d-d184611862ae#acc.cORWsEpx" external underline>Verify Certificate</Link>
+          </div>
+
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">CompTIA Security+</h3>
+            <p class="text-sm text-muted-foreground mb-2">Credential ID: JTJEMM9RMF11QM5P</p>
+            <Link href="https://cp.certmetrics.com/CompTIA/en/public/verify/credential" external underline>Verify Certificate</Link>
+          </div>
+
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">Microsoft Certified: Azure Security Engineer Associate</h3>
+            <p class="text-sm text-muted-foreground mb-2">Credential ID: 785E18F0C9990240</p>
+            <Link href="https://learn.microsoft.com/en-us/users/robertandreiharabagiu-8391/credentials/785e18f0c9990240" external underline>Verify Certificate</Link>
+          </div>
+
+          <div class="rounded-lg border bg-card p-6">
+            <h3 class="text-xl font-semibold mb-2">Cybersecurity - Skillab</h3>
+            <p class="text-sm text-muted-foreground mb-2">Credential ID: e8a93acd8e31f2a35d1f05a1438d5753</p>
+            <Link href="https://lms.skillab.ro/certificate/e8a93acd8e31f2a35d1f05a1438d5753" external underline>Verify Certificate</Link>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>

